@@ -18,21 +18,28 @@ local function _read_from_h5(cache_file)
     local stds = myFile:read('stds'):all()
     local num_bboxes = myFile:read('num_bboxes'):all()[1]
     local bbox_targets = {}
+    local max_overlaps = {}
     for i = 1, num_bboxes do 
         table.insert(bbox_targets, myFile:read('reg_bboxes_' .. tostring(i)):all())
     end
+    for i = 1, num_bboxes do
+        table.insert(max_overlaps, myFile:read('max_overlaps_' .. tostring(i)):all())
+    end
     myFile:close() 
-    return means, stds, bbox_targets
+    return means, stds, bbox_targets, max_overlaps
 end
 
-local function _write_to_h5(cache_file, means, stds, bbox_targets)
+local function _write_to_h5(cache_file, means, stds, bbox_targets, max_overlaps)
     local myFile = hdf5.open(cache_file, 'w')
     myFile:write('means', means)
     myFile:write('stds', stds)
-    num_tensor = torch.IntTensor({table.getn(bbox_targets)})
-    myFile:write('num_bboxes', num_tensor)
-    for i = 1, table.getn(bbox_targets) do
+    num_bbox = #bbox_targets
+    myFile:write('num_bboxes', torch.IntTensor({num_bbox}))
+    for i = 1, num_bbox do
         myFile:write('reg_bboxes_' .. tostring(i), bbox_targets[i])
+    end
+    for i = 1, num_bbox do
+        myFile:write('max_overlaps_' .. tostring(i), max_overlaps[i])
     end
     myFile:close()
 end
@@ -67,7 +74,8 @@ local function _compute_targets(ss_boxes, gt_boxes, gt_classes)
   gt_val, gt_assignment = overlap:max(2)
   lb_val, label = overlap_class:max(2)
   gt_assignment = torch.squeeze(gt_assignment, 2)
-  label = torch.squeeze(label, 2)
+  -- label[lb_val:eq(0)] = 21
+  -- label = torch.squeeze(label, 2)
   gt_inds = torch.squeeze(lb_val:eq(1), 2)
   ex_inds = torch.squeeze(lb_val:ge(config.TRAIN_BBOX_THRESH), 2)
 
@@ -101,7 +109,7 @@ local function _compute_targets(ss_boxes, gt_boxes, gt_classes)
   local j = 1
   for i = 1, total do
       if ex_inds[i] ~= 0 then
-          targets[{{i}, {1}}] = label[i]
+          targets[{{i}, {1}}] = label[i][1]
           targets[{{i}, {2}}] = targets_dx[j]
           targets[{{i}, {3}}] = targets_dy[j]
           targets[{{i}, {4}}] = targets_dw[j]
@@ -111,8 +119,7 @@ local function _compute_targets(ss_boxes, gt_boxes, gt_classes)
           targets[{{i}, {1}}] = 21
       end
   end
-
-  return rois, targets
+  return rois, targets, lb_val
 end
 
 
@@ -123,6 +130,7 @@ function ROIDetection.add_bbox_regression_targets(ss_roi_set, gt_roi_set, gt_cla
     
     local bbox_targets = {}
     local roi_set = {}
+    local max_overlaps = {}
     local num_images = #ss_roi_set
     local num_classes = config.num_classes
 
@@ -130,33 +138,24 @@ function ROIDetection.add_bbox_regression_targets(ss_roi_set, gt_roi_set, gt_cla
     if file_exists(cache_file) then
         -- read targets from existed cache file
         print('Loading from ' .. cache_file)
-        means, stds, bbox_targets = _read_from_h5(cache_file)
+        means, stds, bbox_targets, max_overlaps = _read_from_h5(cache_file)
         for im_i = 1, num_images do
             local ss_rois = ss_roi_set[im_i]:add(-1)
             local gt_rois = gt_roi_set[im_i]:add(-1)
             local rois = _merge_rois(ss_rois, gt_rois)
             table.insert(roi_set, rois)
         end
-        for im_i = 1, num_images do
-            print('image ' .. tostring(im_i) .. ': ')
-            for j = 1, bbox_targets[im_i]:size(1) do
-                if bbox_targets[im_i][j][2] == nan or bbox_targets[im_i][j][3]  == nan or bbox_targets[im_i][j][4] == nan or bbox_targets[im_i][j][5] == nan then
-                    print(bbox_targets[im_i][j])
-                    print('===================================yes============================================')
-                end
-            end
-        end
-        print('Done')
-        return means, stds, roi_set, bbox_targets
+        return means, stds, roi_set, bbox_targets, max_overlaps
     end
 
     for im_i = 1, num_images do
         local ss_rois = ss_roi_set[im_i]
         local gt_rois = gt_roi_set[im_i]
         local max_classes = gt_classes[im_i]
-        local rois, targets = _compute_targets(ss_rois, gt_rois, max_classes)
+        local rois, targets, lb_val = _compute_targets(ss_rois, gt_rois, max_classes)
         table.insert(bbox_targets, targets)
         table.insert(roi_set, rois)
+        table.insert(max_overlaps, lb_val)
     end
 
     -- Compute values needed for means and std
@@ -199,7 +198,7 @@ function ROIDetection.add_bbox_regression_targets(ss_roi_set, gt_roi_set, gt_cla
 
     -- Normalize targets
     for im_i = 1, num_images do
-         print('image ' .. tostring(im_i) .. ': ')
+        -- print('image ' .. tostring(im_i) .. ': ')
         local targets = bbox_targets[im_i]
         for j = 1, targets:size(1) do
             local cls = torch.round(targets[j][1])
@@ -208,15 +207,16 @@ function ROIDetection.add_bbox_regression_targets(ss_roi_set, gt_roi_set, gt_cla
                 bbox_targets[im_i][{{j}, {2, 5}}]:cdiv(stds[{{cls}, {}}])
             end
         end
-        --print(bbox_targets[im_i])
-        --io.read()
     end
+    print('means: ', means)
+    print('stds: ', stds)
+    io.read()
     print('Writing to ' .. cache_file)
-    _write_to_h5(cache_file, means, stds, bbox_targets)
+    _write_to_h5(cache_file, means, stds, bbox_targets, max_overlaps)
     print('Done')
     -- These values will be needed for making predictions
     -- (The predicts will need to be unnormalized and uncentered)
-    return means, stds, roi_set, bbox_targets
+    return means, stds, roi_set, bbox_targets, max_overlaps
 end
 
 
