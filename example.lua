@@ -8,16 +8,13 @@ require 'data_layer'
 
 
 -- example for ROIDetection
-year = '2007'
-data_type = 'train'
+-- year = '2007'
+-- data_type = 'train'
 -- gt_bboxes, gt_classes = pascal_voc.get_gt_bboxes(year, data_type)
 gt_bboxes, gt_classes = pascal_voc.get_gt_bboxes()
 -- ss_rois = pascal_voc.get_ss_rois(year, data_type)
 ss_rois = pascal_voc.get_ss_rois()
 means, stds, roi_set, bbox_targets, max_overlaps = ROIDetection.add_bbox_regression_targets(ss_rois, gt_bboxes, gt_classes)
-
---[[
-]]
 images = pascal_voc.load_image_set_index()
 
 ------ test data_layer -------------------
@@ -25,6 +22,7 @@ data_layer.set_roidb(images, roi_set, bbox_targets, max_overlaps)
 while true do
     local im_blob, rois_blob, bbox_targets_blob, labels_blob = data_layer.get_next_minibatch()
     print(#im_blob, #rois_blob, #bbox_targets_blob, #labels_blob)
+    io.read()
     print('===========================================================================\n\n')
 end
 

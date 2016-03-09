@@ -20,7 +20,7 @@ end
 
 local function _index_sp(tb, inds)
     -- Return tb elements in the inds. 
-    inds = torch.totable(inds) 
+    -- inds = torch.totable(inds) 
     local storage = {}
     for i = 1, #inds do
         table.insert(storage, tb[inds[i]]) 
@@ -31,7 +31,6 @@ end
 local function _index_imgsp( im1, im2 )
     -- Return elements in roidb whose 'image' field is specified by im1, im2
     -- This function used for testing.
-    -- print(im1, im2)
     local storage = {}
     for i = 1, #_roidb  do
         if _roidb[i]['image'] == im1 then
@@ -48,23 +47,23 @@ end
 
 local function _shuffle_roidb_inds()
     -- Randomly permute the training roidb.
-    print('>>>>>>>> _shuffle_roidb_inds')
+    -- print('>>>>>>>> _shuffle_roidb_inds')
     _perm = torch.randperm(#_roidb)
     _cur = 1
-    print('<<<<<<<< _shuffle_roidb_inds')
+    -- print('<<<<<<<< _shuffle_roidb_inds')
 end
 
 local function _get_next_minibatch_inds()
     -- Return the roidb indices for the next minibatch.
-    print('>>>>>>>> get_next_minibatch_inds')
+    -- print('>>>>>>>> get_next_minibatch_inds')
 
     if _cur + config.TRAIN_IMS_PER_BATCH > #_roidb then
         _shuffle_roidb_inds()
     end
     local db_inds = _index(_perm, _cur, config.TRAIN_IMS_PER_BATCH)
     _cur = _cur + config.TRAIN_IMS_PER_BATCH
-    print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> _cur: ' .. tostring(_cur))
-    print('<<<<<<< get_next_minibatch_inds')
+    --print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> _cur: ' .. tostring(_cur))
+    -- print('<<<<<<< get_next_minibatch_inds')
     return db_inds
 end
 
@@ -88,7 +87,7 @@ local function _prep_im_for_blob(im, pixel_means, target_size, max_size)
 end
 
 local function _im_list_to_blob(ims)
-    print('>>>>>>>> _im_list_to_blob')
+    -- print('>>>>>>>> _im_list_to_blob')
     -- Convert a list of images into a network input
     -- Assumes images are already prepared (means substracted ...)
     local shapes = torch.Tensor(#ims, 3)
@@ -102,13 +101,13 @@ local function _im_list_to_blob(ims)
     for i = 1, #ims do
         blob[{{i}, {}, {1, ims[i]:size(2)}, {1, ims[i]:size(3)}}] = ims[i]
     end
-    print('<<<<<<<< _im_list_to_blob')
+    -- print('<<<<<<<< _im_list_to_blob')
     return blob
 end
 
 local function _get_image_blob(roidb, scale_inds)
     -- Builds an input blob from the images in the roidb at the specified scales
-    print('>>>>>>>> _get_image_blob')
+    -- print('>>>>>>>> _get_image_blob')
     local num_images = #roidb
     local processed_ims = {}
     local im_scales = {}
@@ -123,17 +122,17 @@ local function _get_image_blob(roidb, scale_inds)
         table.insert(processed_ims, im)
     end
     local blob = _im_list_to_blob(processed_ims)
-    print('<<<<<<<< _get_image_blob')
+    -- print('<<<<<<<< _get_image_blob')
     return blob, im_scales
 
 end
 
 local function _project_im_rois(im_rois, im_scales_factor)
 
-    print('>>>>>>>> _project_im_rois')
+    -- print('>>>>>>>> _project_im_rois')
     -- Project image RoIs into the rescaled training image.
     local rois = im_rois * im_scales_factor
-    print('<<<<<<<< _project_im_rois')
+    -- print('<<<<<<<< _project_im_rois')
     return rois
 end
 
@@ -143,7 +142,7 @@ local function _get_bbox_regression_labels(bbox_target_data, clss)
     -- Returns:
     --   bbox_target_data: N x 4K blob of regression targets
     
-    print('>>>>>>>> _get_bbox_regression_labels')
+    -- print('>>>>>>>> _get_bbox_regression_labels')
     local num = clss:size(1)
     local bbox_targets = torch.zeros(num, 4 * config.num_classes)
     for ind = 1, num do
@@ -154,13 +153,13 @@ local function _get_bbox_regression_labels(bbox_target_data, clss)
             bbox_targets[{{ind}, {st, ed}}] = bbox_target_data[{{ind}, {2, 5}}]
         end
     end
-    print('<<<<<<<< _get_bbox_regression_labels')
+    -- print('<<<<<<<< _get_bbox_regression_labels')
     return bbox_targets
 end
 
 local function _sample_rois(roidb, fg_rois_per_image, rois_per_image)
     -- Generate a random smaple of RoIs comprising foreground and background examples
-    print('>>>>>>>> _sample_rois')
+    -- print('>>>>>>>> _sample_rois')
     local rois = roidb['boxes']
     local overlaps = roidb['max_overlaps']
     local labels = roidb['bbox_targets'][{{}, {1}}]
@@ -171,7 +170,6 @@ local function _sample_rois(roidb, fg_rois_per_image, rois_per_image)
     local fg_inds = {}
     local bg_inds = {}
     for i = 1, num_rois do
-        -- print(tostring(overlaps[i][1]) .. '  ' .. tostring(config.TRAIN_FG_THRESH))
         if overlaps[i][1] >= config.TRAIN_FG_THRESH then
             table.insert(fg_inds, i)
         end
@@ -181,11 +179,11 @@ local function _sample_rois(roidb, fg_rois_per_image, rois_per_image)
     end
     local fg_rois_per_this_image = math.min(#fg_inds, fg_rois_per_image)
     if #fg_inds > 0 then
-        fg_inds = _index_sp(fg_inds, (torch.randperm(#fg_inds))[{{1, fg_rois_per_this_image}}])
+        fg_inds = _index_sp(fg_inds, torch.totable((torch.randperm(#fg_inds))[{{1, fg_rois_per_this_image}}]))
     end
     local bg_rois_per_this_image = math.min(rois_per_image - fg_rois_per_this_image, #bg_inds)
     if #bg_inds > 0 then
-        bg_inds = _index_sp(bg_inds, (torch.randperm(#bg_inds))[{{1, bg_rois_per_this_image}}])
+        bg_inds = _index_sp(bg_inds, torch.totable((torch.randperm(#bg_inds))[{{1, bg_rois_per_this_image}}]))
     end
     
     local rois_keep = torch.zeros(#fg_inds + #bg_inds, 4)
@@ -205,7 +203,7 @@ local function _sample_rois(roidb, fg_rois_per_image, rois_per_image)
     end
 
     bbox_targets = _get_bbox_regression_labels(targets_keep, labels_keep)
-    print('<<<<<<<< _sample_rois')
+    -- print('<<<<<<<< _sample_rois')
     return rois_keep, bbox_targets, labels_keep
 end
 
@@ -250,18 +248,18 @@ end
 
 function data_layer.get_next_minibatch()
     -- Return the blobs to be used for the next minibatch.
-    print('>>>>>>>> get_next_minibatch')
+    print('Getting next minibatch ... ')
     local db_inds = _get_next_minibatch_inds()
     local minibatch_db = _index_sp(_roidb, db_inds)
     local im_blob, rois_blob, bbox_targets_blob, labels_blob =  _get_minibatch(minibatch_db)
 
-    print('<<<<<<<< get_next_minibatch')
+    print('Done')
     return im_blob, rois_blob, bbox_targets_blob, labels_blob
 end
 
 
 function data_layer.set_roidb(images, rois, bbox_targets, max_overlaps)
-    print('>>>>>>> set_roidb')
+    -- print('>>>>>>> set_roidb')
     local roidb = {}
     local num_images = #images
     for im_i = 1, num_images do
@@ -274,7 +272,7 @@ function data_layer.set_roidb(images, rois, bbox_targets, max_overlaps)
     end
     _roidb = roidb
     _shuffle_roidb_inds()
-    print('<<<<<<< set_roidb')
+    -- print('<<<<<<< set_roidb')
 end
 
 return data_layer
