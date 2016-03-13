@@ -208,9 +208,6 @@ function ROIDetection.add_bbox_regression_targets(ss_roi_set, gt_roi_set, gt_cla
             end
         end
     end
-    print('means: ', means)
-    print('stds: ', stds)
-    io.read()
     print('Writing to ' .. cache_file)
     _write_to_h5(cache_file, means, stds, bbox_targets, max_overlaps)
     print('Done')

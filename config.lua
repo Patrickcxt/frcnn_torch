@@ -2,7 +2,7 @@
 config = {}
 -- source of training data
 config.year = '2007'
-config.data_type = 'trainval'
+config.data_type = 'test'
 
 config.num_classes = 21
 config._EPS = 1e-14
@@ -38,6 +38,13 @@ config.TRAIN_MAX_SIZE = 1000
 -- We use the same pixel mean for all networks even though it's not exactly what
 -- they were trained with
 config.PIXEL_MEANS = {122.7717, 115.9465, 102.9801}
+
+
+
+
+config.TEST_SCALES = {600}
+config.TEST_MAX_SIZE = 1000
+config.DEDUP_BOXES = 1.0/16.0
 
 
 return config

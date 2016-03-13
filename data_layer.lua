@@ -68,7 +68,7 @@ local function _get_next_minibatch_inds()
 end
 
 
-local function _prep_im_for_blob(im, pixel_means, target_size, max_size)
+function data_layer.prep_im_for_blob(im, pixel_means, target_size, max_size)
     -- Mean subtract and scale an image for use in a blob
     im = im:mul(255.0):clamp(0, 255)
     local p = config.PIXEL_MEANS
@@ -86,7 +86,7 @@ local function _prep_im_for_blob(im, pixel_means, target_size, max_size)
     return im , im_scale
 end
 
-local function _im_list_to_blob(ims)
+function data_layer.im_list_to_blob(ims)
     -- print('>>>>>>>> _im_list_to_blob')
     -- Convert a list of images into a network input
     -- Assumes images are already prepared (means substracted ...)
@@ -117,17 +117,17 @@ local function _get_image_blob(roidb, scale_inds)
         local im_scale;
         -- To do: flipped
         local target_size = config.TRAIN_SCALES[scale_inds[i]]
-        im, im_scale = _prep_im_for_blob(im, config.PIXEL_MEANS, target_size, config.TRAIN_MAX_SIZE)
+        im, im_scale = data_layer.prep_im_for_blob(im, config.PIXEL_MEANS, target_size, config.TRAIN_MAX_SIZE)
         table.insert(im_scales, im_scale)
         table.insert(processed_ims, im)
     end
-    local blob = _im_list_to_blob(processed_ims)
+    local blob = data_layer.im_list_to_blob(processed_ims)
     -- print('<<<<<<<< _get_image_blob')
     return blob, im_scales
 
 end
 
-local function _project_im_rois(im_rois, im_scales_factor)
+function data_layer.project_im_rois(im_rois, im_scales_factor)
 
     -- print('>>>>>>>> _project_im_rois')
     -- Project image RoIs into the rescaled training image.
@@ -229,7 +229,7 @@ local function _get_minibatch(roidb)
         local im_rois, bbox_targets, clss = _sample_rois(roidb[im_i], fg_rois_per_image, rois_per_image)
         
         -- Add to RoIs blob
-        local  rois = _project_im_rois(im_rois, im_scales[im_i])
+        local  rois = data_layer.project_im_rois(im_rois, im_scales[im_i])
         local  rois_blob_this_image = torch.zeros(im_rois:size(1), 5)
         rois_blob_this_image[{{}, {1} }]:fill(im_i)
         rois_blob_this_image[{{}, {2, 5} }] = rois
