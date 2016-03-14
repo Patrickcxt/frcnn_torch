@@ -1,6 +1,11 @@
+------------------------------------------------------------------
+-- Author: Weimian Li
+-- Date: 2016.01 - present
+------------------------------------------------------------------
+
 require 'loadcaffe'
 require 'image'
-
+require 'ROIPooling'
 
 function get_model()
 
@@ -8,14 +13,9 @@ function get_model()
   --pretrained_model = loadcaffe.load( 'VGG_CNN_S_deploy.prototxt', 'VGG_CNN_S.caffemodel' )
 
   pretrained_model = loadcaffe.load( 'models/VGG_CNN_M_1024/test.prototxt', 'fast_rcnn_models/vgg_cnn_m_1024_fast_rcnn_iter_40000.caffemodel' )
-  print( pretrained_model )
-  print(pretrained_model[19])
-  print(pretrained_model[16])
-  io.read()
-  local fc1, fc2;
+  -- print( pretrained_model )
+  
   for i=24,15,-1 do
-    if i == 19 then fc2 = pretrained_model[i] end
-    if i == 16 then fc1 = pretrained_model[i] end
     pretrained_model:remove(i)
   end
   conv = pretrained_model --use the pretrained convs to decrease training time
@@ -35,14 +35,12 @@ function get_model()
   fc = nn.Sequential()
 
   -- fc6
-  --fc:add(nn.Linear(18432, 4096))
-  fc:add(fc1)
+  fc:add(nn.Linear(18432, 4096))
   fc:add(nn.ReLU(true))
   fc:add(nn.Dropout(0.500000))
 
   -- fc7
-  --fc:add(nn.Linear(4096, 1024))
-  fc:add(fc2)
+  fc:add(nn.Linear(4096, 1024))
   fc:add(nn.ReLU(true))
   fc:add(nn.Dropout(0.500000))
 
@@ -81,4 +79,3 @@ function get_model()
   return conv_ROI, cls_reg
 end
 
-get_model()
