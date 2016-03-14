@@ -1,8 +1,3 @@
----------------------------------
--- Author: Weimian Li
--- Date:   2016.1-present
------------------------------------
-
 require 'torch'
 require 'nn'
 require 'nngraph'
@@ -13,16 +8,18 @@ require 'image'
 require 'ROIDetection'
 require 'pascal_voc'
 require 'model'
+require 'data_layer'
 
 
 conv_ROI, cls_reg = get_model()
+
+--cls_reg = torch.load( 'trained_cls_reg.bin', 'binary' )
+
 conv_ROI:training()
 cls_reg:training()
+
 print ( conv_ROI:__tostring() )
 print ( cls_reg:__tostring() )
-io.read()
-nngraph.display(cls_reg)
-io.read()
 
 ----------------------------Variables' definition--------------------------------
 
@@ -35,140 +32,77 @@ optimState = {
 } -- parameters sdg needs
 
 cls_reg_parameters, cls_reg_gradParameters = cls_reg:getParameters()
-criterion_cls = nn.ClassNLLCriterion()
-criterion_reg = nn.SmoothL1Criterion()
+criterion_cls = nn.CrossEntropyCriterion()--:cuda
+criterion_reg = nn.SmoothL1Criterion()--:cuda
 
-roi_batch = 128
-img_batch = 1
 ---------------------------------------------------------------------------------
 
 
 -------------------------------Loading Dataset-----------------------------------
 
-Year = '2007'
-Type = 'train'
+gt_bboxes, gt_classes = pascal_voc.get_gt_bboxes()
+ss_rois = pascal_voc.get_ss_rois()
+means, stds, roi_set, bbox_targets, max_overlaps = ROIDetection.add_bbox_regression_targets(ss_rois, gt_bboxes, gt_classes)
+images = pascal_voc.load_image_set_index()
+data_layer.set_roidb(images, roi_set, bbox_targets, max_overlaps)
 
-train_images = pascal_voc.load_image_set_index( Year, Type )
-all_gt_bboxes, all_gt_classes = pascal_voc.get_gt_bboxes( Year, Type )
-all_ss_rois = pascal_voc.get_ss_rois( Year,Type )
-means, stds, rois, bbox_targets = ROIDetection.add_bbox_regression_targets( all_ss_rois, all_gt_bboxes, all_gt_classes ) 
-
-img_num = #train_images
-randIdx = torch.randperm( img_num )
+saved = 0
 
 ---------------------------------------------------------------------------------
 
-
-for idx=1, img_num, img_batch do
+for idx=1, 40000  do
 
   local time = os.time()
-  ------------------------------------------------------------------------------
-  Image = torch.Tensor( math.min(img_batch,img_num-idx+1), 3, 224, 224 )
-
-  roi_num_perbatch = 0
-  rois_perbatch = {}
-  targets_perbatch = {}
-
-  for i=idx, math.min( idx+img_batch-1, img_num ) do
-    img = pascal_voc.get_image( train_images[ randIdx[i] ], Year )
-    ss_rois = rois[ randIdx[i] ]
-
-    ------------------Resize image and rois------------------------
-
-    img = image.scale( img, 224, 224 )
-    local img_size = img:size()
-    local swidth = 224/img_size[3]
-    local sheight = 224/img_size[2]
-    ss_rois[{ {}, {1} }]:mul(swidth):round()
-    ss_rois[{ {}, {3} }]:mul(swidth):round()
-    ss_rois[{ {}, {2} }]:mul(sheight):round()
-    ss_rois[{ {}, {4} }]:mul(sheight):round()
-
-    rois_imgIdx = torch.Tensor( ss_rois:size(1), 5 )
-    rois_imgIdx[{ {},{1} }] = (i-1)%img_batch + 1
-    rois_imgIdx[{ {},{2,5} }] = ss_rois
-
-    ---------------------------------------------------------------
-    table.insert( rois_perbatch, rois_imgIdx )
-    table.insert( targets_perbatch, bbox_targets[ randIdx[i] ] )
-    roi_num_perbatch = roi_num_perbatch + ss_rois:size(1)
-    Image[ (i-1)%img_batch+1 ] = img
-  end
-
-  ROIs = torch.Tensor( roi_num_perbatch, 5 )
-  Targets = torch.Tensor( roi_num_perbatch, 5 )
-  local index = 1
-  for j = 1, #rois_perbatch do
-    ROIs[{ {index,index+rois_perbatch[j]:size(1)-1}, {} }] = rois_perbatch[j]
-    Targets[{ {index,index+rois_perbatch[j]:size(1)-1}, {} }] = targets_perbatch[j]
-    index = index + rois_perbatch[j]:size(1)
-  end
-
-  input = { Image, ROIs } --Preprocessed Input
-  -----------------------------------------------------------------------------
+  local im_blob, rois_blob, bbox_targets_blob, labels_blob = data_layer.get_next_minibatch()
+  input = { im_blob, rois_blob } --Preprocessed Input
 
   conv_features = conv_ROI:forward( input )
-  train_size = conv_features:size(1)
-  shuffle = torch.randperm( train_size )
 
-  for t = 1, train_size, roi_batch do
-    --create mini batch
-    fc_inputs = {}
-    cls_targets = {}
-    roi_targets = {}
-    for i = t, math.min( t + roi_batch - 1, train_size ) do
-      each_sample = conv_features[ shuffle[i] ]
-      each_cls_target = Targets[ shuffle[i] ][1]
-      each_roi_target = Targets[ shuffle[i] ][{{2,5}}]
-      table.insert( fc_inputs, each_sample )
-      table.insert( cls_targets, each_cls_target )
-      table.insert( roi_targets, each_roi_target )
+  -----------------Definition of Opfunc used for optim.sdg----------------------
+
+  local function LossAndGradient(x)
+    if x ~= cls_reg_parameters then
+      cls_reg_parameters:copy(x)
     end
 
-    -----------------Definition of Opfunc used for optim.sdg----------------------
+    cls_reg_gradParameters:zero()
+    cls_loss = 0
+    reg_loss = 0
+    fsize = conv_features:size(1)
 
-    local function LossAndGradient(x)
-      if x ~= cls_reg_parameters then
-        cls_reg_parameters:copy(x)
-      end
+    for i = 1, fsize do
+      output = cls_reg:forward( conv_features[i] )
 
-      cls_reg_gradParameters:zero()
-      cls_loss = 0
-      reg_loss = 0
+      cls_err = criterion_cls:forward( output[1], labels_blob[i] )
+      cls_loss = cls_loss + cls_err
+      cls_delta = criterion_cls:backward( output[1], labels_blob[i] )
 
-      for i = 1, #fc_inputs do
-        output = cls_reg:forward( fc_inputs[i] )
+      reg_err = criterion_reg:forward( output[2], bbox_targets_blob[i] )
+      reg_loss = reg_loss + reg_err
+      reg_delta = criterion_reg:backward( output[2], bbox_targets_blob[i] )
+      print( bbox_targets_blob[i] )
 
-        cls_err = criterion_cls:forward( output[1], cls_targets[i] )
-        cls_loss = cls_loss + cls_err
-        cls_delta = criterion_cls:backward( output[1], cls_targets[i] )
-
-        reg_err = criterion_reg:forward( output[2], roi_targets[i] )
-        reg_loss = reg_loss + reg_err
-        reg_delta = criterion_reg:backward( output[2], roi_targets[i] )
-
-        cls_reg_delta = cls_reg:backward( fc_inputs[i], { cls_delta, reg_delta } )
-      end
-
-      cls_reg_gradParameters:div( #fc_inputs )
-      pcls_loss = cls_loss/#fc_inputs
-      preg_loss = reg_loss/#fc_inputs
-      average_loss = pcls_loss + preg_loss
-      return average_loss,cls_reg_gradParameters
+      cls_reg_delta = cls_reg:backward( conv_features[i], { cls_delta, reg_delta } )
     end
-    ------------------------------------------------------------------------------
 
-    local x,fx = optimMethod( LossAndGradient, cls_reg_parameters, optimState )
+    cls_reg_gradParameters:div( fsize )
+    pcls_loss = cls_loss/fsize
+    preg_loss = reg_loss/fsize
+    average_loss = pcls_loss + preg_loss
+    return average_loss,cls_reg_gradParameters
   end
+  ------------------------------------------------------------------------------
+
+  optimMethod( LossAndGradient, cls_reg_parameters, optimState )
 
   taken_time = os.time() - time
-  print( idx+img_batch-1 .. '/' .. img_num .. '    rois: ' .. train_size .. '     ' .. taken_time .. 's' )
+  print( idx .. 'th batch  ' .. taken_time .. 's')
   ------------------------------------------------------------------------------
+
+  local save_num = 1000
+  if idx%save_num == 0 then
+    torch.save( 'trained_cls_reg.t7', cls_reg, 'binary' )
+    saved = saved + 1
+    print( 'Saved ' .. saved .. ' times' )
+  end
 end
-
-conv_ROI:evaluate()
-cls_reg:evaluate()
-
-torch.saveobj( 'trained_conv_ROI.bin', conv_ROI, 'binary' )
-torch.saveobj( 'trained_cls_reg.bin', cls_reg, 'binary' )
-
