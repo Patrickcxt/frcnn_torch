@@ -1,8 +1,3 @@
-------------------------------------------------------------------
--- Author: Weimian Li
--- Date: 2016.01 - present
-------------------------------------------------------------------
-
 require 'loadcaffe'
 require 'image'
 require 'ROIPooling'
@@ -10,7 +5,6 @@ require 'ROIPooling'
 function get_model()
 
 ---------------Convolutional Layers + ROI pooling--------------------------
-  --pretrained_model = loadcaffe.load( 'VGG_CNN_S_deploy.prototxt', 'VGG_CNN_S.caffemodel' )
 
   pretrained_model = loadcaffe.load( 'models/VGG_CNN_M_1024/test.prototxt', 'fast_rcnn_models/vgg_cnn_m_1024_fast_rcnn_iter_40000.caffemodel' )
   -- print( pretrained_model )
@@ -60,22 +54,6 @@ function get_model()
 
   cls_reg = nn.gModule( {fc_input}, {cout,rout} )
 
-  print(cls_reg)
-
-  --[[
-  local function init(module, name)
-    local function init_module(m)
-      for k,v in pairs(m:findModules(name)) do
-        local n = v.kW * v.kH * v.nOutputPlane
-        v.weight:normal(0, math.sqrt(2 / n))
-        v.bias:zero()
-      end
-    end
-    module:apply(init_module)
-  end
-
-  init(cls_reg, 'nn.SpatialConvolution')
-]]
   return conv_ROI, cls_reg
 end
 
