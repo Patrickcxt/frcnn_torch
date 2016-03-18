@@ -139,7 +139,8 @@ function utils.visualize(im, boxes, scores, thresh, cl_names)
   local r = torch.range(1,boxes:size(1)):long()
   local rr = r[idx_thresh]
   if rr:numel() == 0 then
-    error('No detections with a score greater than the specified threshold')
+    --error('No detections with a score greater than the specified threshold')
+    print('No detections with a score greater than the specified threshold')
   end
   local boxes_thresh = boxes:index(1,rr)
   
@@ -180,6 +181,68 @@ function utils.visualize(im, boxes, scores, thresh, cl_names)
   w:setlinewidth(2)
   w:stroke()
   return w
+end
+
+
+-------------------------------------------------------------------------------------
+-- Priority queue, written by Dennis Schridde
+-------------------------------------------------------------------------------------
+local table = require "table"
+local insert = table.insert
+local remove = table.remove
+
+function utils.pqueue(cmp, initial)
+    local cmp = cmp or function(a,b) return a < b end
+
+    local pq = setmetatable({}, {
+        __index = {
+            size = 0,
+            push = function(self, v)
+                insert(self, v)
+                local next = #self
+                local prev = (next-next%2)/2
+                while next > 1 and cmp(self[next], self[prev]) do
+                    self[next], self[prev] = self[prev], self[next]
+                    next = prev
+                    prev = (next-next%2)/2
+                end
+            end,
+            pop = function(self)
+                if #self < 2 then
+                    return remove(self)
+                end
+                local root = 1
+                local r = self[root]
+                self[root] = remove(self)
+                local size = #self
+                if size > 1 then
+                    local child = 2*root
+                    while child <= size do
+                        if cmp(self[child], self[root]) then
+                            self[root], self[child] = self[child], self[root]
+                            root = child
+                        elseif child+1 <= size and cmp(self[child+1], self[root]) then
+                            self[root], self[child+1] = self[child+1], self[root]
+                            root = child+1
+                        else
+                            break
+                        end
+                        child = 2*root
+                    end
+                end
+                return r
+            end,
+            peek = function(self)
+                return self[1]
+            end,
+        }
+    })
+
+    for _,el in ipairs(initial or {}) do
+        pq:push(el)
+    end
+
+    return pq
 end
 
 

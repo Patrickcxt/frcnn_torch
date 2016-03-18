@@ -45,6 +45,7 @@ config.PIXEL_MEANS = {122.7717, 115.9465, 102.9801}
 config.TEST_SCALES = {600}
 config.TEST_MAX_SIZE = 1000
 config.DEDUP_BOXES = 1.0/16.0
+config.TEST_NMS = 0.3
 
 
 return config
