@@ -179,7 +179,7 @@ function apply_nms(all_boxes, thresh)
             nms_boxes[cls_ind][im_ind] = torch.Tensor(0)
             local dets = all_boxes[cls_ind][im_ind]
             
-            if dets:dim() > 0 then
+            if dets:dim() > 0 and dets[1][1] ~= -1 then
                 local keep = utils.nms(dets, thresh)
                 if keep:size(1) > 0 then
                     nms_boxes[cls_ind][im_ind] = dets:index(1, keep)
@@ -204,9 +204,6 @@ local function _write_voc_results_file(all_boxes)
         assert(wfile)
         -- image_index = {'000001', '000002'}  -- just for test
         for im_ind, index in pairs(images) do
-            if im_ind == 101 then
-                break
-            end
             local dets = all_boxes[cls_ind][im_ind]
             if dets:dim() > 0 then
                 for k = 1, dets:size(1) do
@@ -310,7 +307,8 @@ function test_net()
     cls_reg:evaluate()
 
     
-    local num_images = #images
+    -- local num_images = #images
+    local num_images = 2
     print(tostring(#images) .. ' images will be detected ...')
     -- heuristic: keep an average of 40 detections per class per images piror to NMS
     local max_per_set = 40 * num_images
@@ -331,7 +329,7 @@ function test_net()
     end
 
     for i = 1, num_images do
-        local st = os.clock()
+        local st = os.time()
         local im = pascal_voc.get_image(images[i])
         local scores, boxes = im_detect(im, ss_rois[i], conv_ROI, cls_reg)
         for j = 1, config.num_classes-1 do
@@ -340,6 +338,8 @@ function test_net()
                 local num_select = inds:sum()
                 print('num_select: ', num_select)
                 if num_select == 0 then
+                    all_boxes[j][i] = torch.Tensor(1, 5):fill(-1)
+                    print(all_boxes[j][i])
                     break
                 end
                 local cls_scores = scores[{{}, {j}}][inds]:reshape(num_select, 1)
@@ -372,15 +372,19 @@ function test_net()
             until true
         end
         be_print(thresh, 'thresh')
-        print(string.format('The ' .. tostring(i) .. 'th image: ' .. images[i] .. '.jpg detected, elapsed time: %.2f', os.clock()-st))
+        print(string.format('The ' .. tostring(i) .. 'th image: ' .. images[i] .. '.jpg detected, elapsed time: %.2f', os.time()-st))
     end
 
-    for j = 1, config.num_classes-1 do
+    for j = 1, config.num_classes - 1 do
         for i = 1, num_images do
             local inds = all_boxes[j][i][{{}, {1}}]:gt(thresh[j])
             local num_keep = inds:sum()
-            inds = inds:cat(inds):cat(inds):cat(inds):cat(inds)
-            all_boxes[j][i] = all_boxes[j][i][inds]:reshape(num_keep, 5)
+            if num_keep == 0 then
+                all_boxes[j][i] = torch.Tensor(1, 5):fill(-1)
+            else 
+                inds = inds:cat(inds):cat(inds):cat(inds):cat(inds)
+                all_boxes[j][i] = all_boxes[j][i][inds]:reshape(num_keep, 5)
+            end
         end
     end
 
