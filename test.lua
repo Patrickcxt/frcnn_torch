@@ -242,7 +242,6 @@ local function _save_detections(all_boxes, output_dir)
     myFile:write('num_images', torch.IntTensor({num_images}))
     for cls_ind = 1, num_classes do
         for im_ind = 1, num_images do
-            print(all_boxes[cls_ind][im_ind]:size())
             myFile:write(string.format('det_%d_%d', cls_ind, im_ind), all_boxes[cls_ind][im_ind])
         end
     end
@@ -307,7 +306,7 @@ function test_net()
     cls_reg:evaluate()
 
     
-    -- local num_images = #images
+    --local num_images = #images
     local num_images = 2
     print(tostring(#images) .. ' images will be detected ...')
     -- heuristic: keep an average of 40 detections per class per images piror to NMS
@@ -324,7 +323,8 @@ function test_net()
     local top_scores = {}
     local all_boxes = {}
     for i = 1, config.num_classes-1 do
-        top_scores[i] = utils.pqueue()
+        --top_scores[i] = utils.pqueue()
+        top_scores[i] = torch.Tensor(1):fill(-math.huge)
         all_boxes[i] = {}
     end
 
@@ -336,14 +336,11 @@ function test_net()
             repeat
                 local inds = scores[{{}, {j}}]:gt(thresh[j])
                 local num_select = inds:sum()
-                print('num_select: ', num_select)
                 if num_select == 0 then
                     all_boxes[j][i] = torch.Tensor(1, 5):fill(-1)
-                    print(all_boxes[j][i])
                     break
                 end
                 local cls_scores = scores[{{}, {j}}][inds]:reshape(num_select, 1)
-                -- print(cls_scores)
                 local inds_box = inds:cat(inds):cat(inds):cat(inds)
                 local cls_boxes = boxes[{{}, {j*4-3, j*4}}][inds_box]:reshape(num_select, 4)
                 cls_scores, inds = torch.sort(cls_scores, 1, true)
@@ -352,15 +349,11 @@ function test_net()
                 cls_boxes = cls_boxes:index(1, inds[{{1, max_this_image}, {}}]:reshape(max_this_image))
 
                 -- push new scores onto the minheap
-                for k = 1, max_this_image do
-                    top_scores[j]:push(cls_scores[k][1])
-                end
-                -- if we've collected more than the max number of detection, 
-                -- then pop items off the minheap and update the class threshold
-                if table.getn(top_scores[j]) > max_per_set then
-                    while table.getn(top_scores[j]) > max_per_set do
-                        top_scores[j]:pop()
-                    end
+                top_scores[j] = top_scores[j]:cat(cls_scores:reshape(max_this_image))
+                if top_scores[j]:size(1) > max_per_set then
+                    top_scores[j], _ = top_scores[j]:sort()
+                    local st = top_scores[j]:size(1) - max_per_set + 1
+                    top_scores[j] = top_scores[j][{{st, top_scores[j]:size(1)}}]
                     thresh[j] = top_scores[j][1]
                 end
 
