@@ -284,10 +284,18 @@ function demo()
     conv_ROI:evaluate()
     cls_reg:evaluate()
     
-    local im = pascal_voc.get_image('000014')
-    scores, boxes = im_detect(im, ss_rois[10], conv_ROI, cls_reg)
-    local CONF_THRESH = 0.7
-    utils.visualize(im, boxes, scores, CONF_THRESH, cls_names)
+    for  i = 2000, #images do
+        local im = pascal_voc.get_image(images[i])
+        print('Detecting images ' .. images[i] .. '.jpg')
+        scores, boxes = im_detect(im, ss_rois[i], conv_ROI, cls_reg)
+        local CONF_THRESH = 0.5
+        --utils.visualize(im, boxes, scores, CONF_THRESH, cls_names)
+        for j = 1, 20 do
+            local cls_scores = scores[{{}, {j}}]
+            local cls_boxes = boxes[{{}, {j*4-3, j*4}}]
+            utils.visualize_class(im, cls_boxes, cls_scores, CONF_THRESH, cls_names[j])
+        end
+    end
 
 end
 
@@ -306,8 +314,7 @@ function test_net()
     cls_reg:evaluate()
 
     
-    --local num_images = #images
-    local num_images = 2
+    local num_images = #images
     print(tostring(#images) .. ' images will be detected ...')
     -- heuristic: keep an average of 40 detections per class per images piror to NMS
     local max_per_set = 40 * num_images
@@ -393,21 +400,12 @@ function test_net()
 
 end
 
--- test_net()
-
+demo()
+--[[
 local output_dir = './output/VGG_CNN_M_1024_7000/'
 local fn = output_dir .. 'detections.h5'
 if utils.file_exists(fn) then
     local num_classes, num_images, all_boxes = _load_detections(output_dir)
-    --[[
-    local im = pascal_voc.get_image(images[1])
-    local CONF_THRESH = 0.5
-    for cls = 1, 20 do
-        print(all_boxes[cls][1][{{}, {2, 5}}])
-        utils.visualize(im, all_boxes[cls][1][{{}, {2, 5}}], all_boxes[cls][1][{{}, {1}}], CONF_THRESH, cls_names)
-    end
-    ]]
-    
     print('Applying NMS to all detections')
     local nms_dets = apply_nms(all_boxes, config.TEST_NMS) -- 0.3
     print('Evaluating detections')
@@ -416,4 +414,5 @@ if utils.file_exists(fn) then
 else
     test_net()
 end
+]]
 
